@@ -1,29 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_web_auth/flutter_web_auth.dart';
+import 'package:uni_links/uni_links.dart';
+import 'dart:async';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp();
 
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
+        primarySwatch: Colors.deepPurple,
       ),
       home: const MyHomePage(title: 'LED Control'),
     );
@@ -31,7 +30,7 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  const MyHomePage({required this.title, Key? key}) : super(key: key);
 
   final String title;
 
@@ -41,6 +40,40 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool _isLedOn = false;
+  String? _accessToken;
+  late StreamSubscription _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _initUniLinks();
+  }
+
+  Future<void> _initUniLinks() async {
+    try {
+      final initialUri = await getInitialUri();
+      if (initialUri != null) {
+        _handleIncomingLinks(initialUri);
+      }
+    } on FormatException catch (e) {
+      print('Error parsing initial URI: $e');
+    }
+
+    _sub = uriLinkStream.listen((Uri? uri) {
+      if (uri != null) {
+        _handleIncomingLinks(uri);
+      }
+    }, onError: (Object err) {
+      print('Error receiving URI: $err');
+    });
+  }
+
+  void _handleIncomingLinks(Uri uri) {
+    final token = uri.fragment.split('&').firstWhere((element) => element.startsWith('access_token')).split('=')[1];
+    setState(() {
+      _accessToken = token;
+    });
+  }
 
   Future<void> _sendLedStatus(int status) async {
     final url = Uri.parse(
@@ -64,6 +97,37 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _authenticateWithSpotify() async {
+    const clientId = 'a15c0b0bee0b483f9f2452f427cbf8e0';
+    const redirectUri = 'myapp://auth';
+    const scopes = 'user-read-private user-read-email';
+
+    final authUrl = Uri.https('accounts.spotify.com', '/authorize', {
+      'response_type': 'token',
+      'client_id': clientId,
+      'redirect_uri': redirectUri,
+      'scope': scopes,
+    });
+
+    try {
+      final result = await FlutterWebAuth.authenticate(
+        url: authUrl.toString(),
+        callbackUrlScheme: 'myapp',
+      );
+
+      print('Authentication result: $result');
+
+      final token = Uri.parse(result).fragment.split('&').firstWhere((element) => element.startsWith('access_token')).split('=')[1];
+      setState(() {
+        _accessToken = token;
+      });
+
+      print('Access token: $_accessToken');
+    } catch (e) {
+      print('Error during Spotify authentication: $e');
+    }
+  }
+
   void _toggleLed() {
     setState(() {
       _isLedOn = !_isLedOn;
@@ -75,15 +139,30 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
       body: Center(
-        child: ElevatedButton(
-          onPressed: _toggleLed,
-          child: Text(_isLedOn ? 'Off' : 'On'),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton(
+              onPressed: _toggleLed,
+              child: Text(_isLedOn ? 'Off' : 'On'),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _authenticateWithSpotify,
+              child: Text(_accessToken == null ? 'Login with Spotify' : 'Logged in'),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
   }
 }

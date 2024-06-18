@@ -43,3 +43,4 @@ Upload de code naar de esp8266 en check of alles werkt.
 
 Mochten er bepaalde onderdelen nog niet werken, volg dan deze documentatie:
 rushankshah65.medium.com/how-to-make-an-iot-app-using-flutter-firebase-and-nodemcu-esp8266-b7a0a8c390ee
+
